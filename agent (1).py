@@ -1,10 +1,12 @@
 import gym
 import os
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+from datetime import datetime, date, time
 import pickle
 import warnings
-import pandas as pd
+from QMemory import QState, QMemory, Track
 
 warnings.filterwarnings("ignore")
 
@@ -12,24 +14,28 @@ global team_name, folder, env_name
 team_name = 'ml_team # 1'  # TODO: change your team name
 folder = 'tetris_race_qlearning'
 env_name = 'TetrisRace-v0'  # do not change this
-Test_Episodes = 3000
 
+
+# todo methods:
+# TetrisRaceQLearningAgent.__init__
+# TetrisRaceQLearningAgent.choose_action
+# TetrisRaceQLearningAgent.act
+# TetrisRaceQLearningAgent.check_state_exist
+# Controller.__init__
+# Controller.run_agent
+# Regression.__init__
 
 class TetrisRaceQLearningAgent:
-    def __init__(self, env, learning_rate=0.5, discount_factor=0.5, exploration_rate=0.5, exploration_decay_rate=0.5):
-        self.learning_rate = learning_rate  # learning rate determines multiplier value by which weights or the coefficients changes
-        self.discount_factor = discount_factor  # represents how much future events lose their value according to how far away in time they are
-        self.exploration_rate = exploration_rate  # speed of agent learning at the beginning
-        self.exploration_decay_rate = exploration_decay_rate  # learning speed decrease factor
-        self.exploration_indicator = self.exploration_rate + self.exploration_decay_rate  # calculates final explaration coef
+    def __init__(self, env, learning_rate=0.5, discount_factor=0.4,
+                 exploration_rate=0.5, exploration_decay_rate=0.5):
+        self.learning_rate = learning_rate
+        self.discount_factor = discount_factor
+        self.exploration_rate = exploration_rate
+        self.exploration_decay_rate = exploration_decay_rate
         self.actions = env.unwrapped.actions
-        self._num_actions = len(self.actions)
-        self.state = None
-        self.action = None
-        self.q_table = []
-        self.done_exode_counter = 0
-
-        # Всем спасибо, все свободны!
+        # self._num_actions = len(self.actions)
+        self.q_memory = QMemory()
+        self.track = Track()
         # =============== TODO: Your code here ===============
         #  We'll use tabular Q-Learning in our agent, which means
         #  we need to allocate a Q - Table.Think about what exactly
@@ -41,43 +47,27 @@ class TetrisRaceQLearningAgent:
 
         self.wall_iterator = env.unwrapped.wall_iterator  # passed walls counter
 
-    def get_action_with_max_q_learn_coef(self,
-                                         state_):  # return action (0-left or 1-right) which have bigger q learning coef
-        if state_[0] == 0 and state_[1] == 0:
-            return np.random.choice(self.actions)
-        elif state_[1] > state_[0]:
-            return 1
-        else:
-            return 0
-
-    def choose_action(self, observation):  # method which determines next agent move
+    def choose_action(self, observation):
         # =============== TODO: Your code here ===============
         #  Here agent must choose action on each step, solving exploration-exploitation
         #  trade-off. Remember that in general exploration rate is responsible for
         #  agent behavior in unknown world conditions and main motivation is explore world.
         #  Exploitation rate - choose already known actions and moving through known states.
         #  Think about right proportion that parameters for better solution
-        self.check_state_exist(observation)
-        tmp_exploration_rate = self.exploration_indicator - (
-                    self.done_exode_counter / Test_Episodes)  # 'exploration_indicator' - look above. '(self.done_exode_counter / Test_Episodes)' - what percentage of attempts already was used
-
-        if (np.random.rand() < tmp_exploration_rate):
-            action = np.random.choice(self.actions)
-        else:
-            action = self.get_action_with_max_q_learn_coef(self.get_info_about_state(observation))
-
+        # print('observation= ',observation);
+        action = np.random.choice(self.actions);
+        qState = QState(observation, -1)
+        isQStateInMemory = self.q_memory.find(qState)
+        if (isQStateInMemory):
+            qState = isQStateInMemory
+            if (qState.getWeightActL() < qState.getWeightActR()):
+                action = 1
+            else:
+                if (qState.getWeightActL() > qState.getWeightActR()):
+                    action = 0
         return action
 
-    def get_value_of_max_q_learn_coef(self, state_):  # return biggest q learning coef
-        if state_[0] == 0 and state_[1] == 0:
-            return 0
-        elif state_[1] > state_[0]:
-            return state_[1]
-        else:
-            return state_[0]
-
-    def act(self, state, action, reward,
-            state_):  # state - means past state; state_ - means new state after action 'reward' means reward for current state and 'action' means action (0/1) which was made by agent from prev state to move in current state
+    def act(self, state, action, reward, state_):
         # =============== TODO: Your code here ===============
         #  Here agent takes action('moves' somewhere), knowing
         #  the value of Q - table, corresponds current state.
@@ -85,47 +75,87 @@ class TetrisRaceQLearningAgent:
         #  'Q-value' can become 'better' or 'worsen'. So,
         #   an agent can update knowledge about env, updating Q-table.
         #   Remember that agent should choose max of Q-value in  each step
-        self.check_state_exist(state_)
+        # print('reward=>',reward)
+        if(reward==0):
+            is_state_ = QState(state_, -1)
+            q_state_ = self.q_memory.find(is_state_)
+            if(q_state_):
+                if((q_state_.getWeightActL()<0) and (q_state_.getWeightActR()<0)):
+                    is_state = QState(state,action)
+                    q_state = self.q_memory.find(is_state)
+                    if(q_state):
+                        if(action==0):
+                            q_state.setWeightActL(-1)
+                        else:
+                            q_state.setWeightActR(-1)
+            else:
+                self.q_memory.remember(QState(state,action,reward))
+        else:
+            print(state[1])
+            is_state =QState(state,action,reward)
+            q_state = self.q_memory.find(is_state)
+            if(q_state):
+                # print('is Fatall algoritm')
+                pass
+            else:
+                q_state=is_state
+                q_state.setWeightActR(-1)
+                q_state.setWeightActL(-1)
+                pr_state=self.q_memory.getParentRight(q_state)
+                pl_state=self.q_memory.getParentLeft(q_state)
+                pr_state.setWeightActL(-1)
+                pr_state.setWeightActR(-1)
 
-        # obtaining the previous and current state of
-        # the agent to perform the next action using the Bellman formula
+                pl_state.setWeightActR(-1)
+                pl_state.setWeightActL(-1)
+                if(action==1):
+                    p_state= self.q_memory.getParentLeft(pr_state)
+                    p_state.setWeightActR(-1)
+                    print(p_state.toString())
+                else:
+                    p_state = self.q_memory.getParentRight(pl_state)
+                    p_state.setWeightActL(-1)
+                    print(p_state.toString())
+                self.q_memory.remember(q_state)
 
-        current_state_info = self.get_info_about_state(state)
-        next_state_info = self.get_info_about_state(state_)
 
-        current_state_info[action] += self.learning_rate * (reward + (
-                    self.discount_factor * self.get_value_of_max_q_learn_coef(
-                next_state_info)) - self.get_value_of_max_q_learn_coef(current_state_info))
-        if reward < 0:  # counts just final episode exode, used at calculation 'exploration_rate'
-            self.done_exode_counter += 1
+def dowWeidhtAct(self, q_state, level):
+        if (level == 0):
+            return True
+        else:
+            WAL = self.q_memory.getParentLeft(q_state)
+            if (WAL):
+                WAL.reward -= (level * 2)
+                WAL.setWeightActL(WAL.getWeightActL() - (level * 2))
+                WAL.setWeightActR(WAL.getWeightActR() - (level * 2))
+                self.dowWeidhtAct(WAL, level - 1)
+            WAR = self.q_memory.getParentRight(q_state)
+            if (WAR):
+                WAR.reward -= (level * 2)
+                WAR.setWeightActL(WAR.getWeightActL() - (level * 2))
+                WAR.setWeightActR(WAR.getWeightActR() - (level * 2))
+                self.dowWeidhtAct(WAR, level - 1)
 
-    def get_info_about_state(self, state):  # obtaining information about the coefficients of rotation of the agent
-        # to the left and right, as well as the positions on the current position of the agent
-        # cause Memory leak
-        # for i in self.q_table:
-        #    stateInfo= state[:2]
-        #    q_table_state= np.asarray(i[2])
-        #    compareFlag = True
-        #    for j in range(0, len(stateInfo)):
-        #        if not stateInfo[j] == q_table_state[j]:
-        #            compareFlag= False
-        #    if compareFlag:
-        #        return i
-        stateInfo = tuple(state[:2])
-        for i in self.q_table:
-            if i[2] == stateInfo:
-                return i
+                def check_state_exist(self, state, action=-1):
+                    # =============== TODO: Your code here ===============
+                    #  Here agent can write to Q-table new data vector if current
+                    #  state is unknown for the moment
+                    # for stObjt in self.q_memory:
+                    #     if stObjt[0][0]==state[0] and  stObjt[1] == self.action :
+                    #         return stObjt
+                    if(action==-1):
+                        action=self.action
+                    for item in self.q_memory:
+                        if item.getStateX()==state[0] and item.getStateY() == state[1]: #and item.action==action
+                            return item
+                    return False
 
-    def check_state_exist(self, state):  # add new state cell at q_table if it wasn't at q_table before
-        # =============== TODO: Your code here ===============
-        #  Here agent can write to Q-table new data vector if current
-        #  state is unknown for the moment
-
-        already_exist_at_q_table_flag = self.get_info_about_state(state)
-        if not already_exist_at_q_table_flag:
-            state_ = [0, 0, tuple(state[:2])]
-            self.q_table.append(state_)
-        return already_exist_at_q_table_flag
+                def getStatesByY(self,Y):
+                    arr=[]
+                    for item in self.q_memory:
+                        if item.getStateY()==Y:
+                            arr.append(item)
+                    return arr
 
 
 class EpisodeHistory:
@@ -224,13 +254,42 @@ class EpisodeHistory:
         return answer
 
 
-class Controler:
-    def __init__(self, parent_mode=True, episodes_num=Test_Episodes, global_env=[]):
+def indexEpisode():
+    try:
+        indexEpisode.a += 1
+    except AttributeError:
+        indexEpisode.a = 0
+    return indexEpisode.a
+
+
+class Controller:
+    def saveQmemoryInFile(q_memory):
+        file = open('./logQmemmory__.txt', 'a')
+        file.write('File be update: ' + str(datetime.now()) + " -- \n")
+        index = indexEpisode()
+        if (index == 0):
+            file.write("\n")
+            file.write("+++++++++++++++++++++\n")
+            file.write("\n")
+        file.write('new Episode\n')
+        i = 0
+        while i > (-100000):
+            arr = q_memory.getAllStateWhereY(i)
+            if (not arr):
+                break;
+            file.write('_____ Y __ =>' + str(i) + ' ---count state---=>' + str(len(arr)) + '\n')
+            for item in arr:
+                file.write(item.toString() + ' episode= ' + str(index) + '\n')
+            i -= 1
+        file.close()
+
+    def __init__(self, parent_mode=True, episodes_num=100000, global_env=[]):
         self.team_name = team_name
         self.exp_dir = folder + '/' + self.team_name
         random_state = 0
         self.agent_history = []
         self.history_f = True
+        self.episode_index = 0
 
         self.window = 50
 
@@ -247,23 +306,25 @@ class Controler:
             # car_spawn = 'Random' or 'Center' --> place, where car starts go
             #
             # EXAMPLE:
-            # env.__init__(walls_num = 6, walls_spread = 3, episodes_to_run = episodes_num)
+
             #
             # Best choice will try any of this different options for better understanding and
             # optimizing the solution.
             env = gym.make(env_name)
-            env.__init__(smooth_car_step=2, world_type="Fat", walls_num=33,
-                         walls_spread=15, episodes_to_run=episodes_num, level_difficulty='Easy', car_spawn='Center')
+
+            env.__init__(walls_num=24, walls_spread=16, episodes_to_run=episodes_num, smooth_car_step=10,
+                         car_spawn='Center')
             env.seed(random_state)
             np.random.seed(random_state)
-            self.lr = 1  # learning rate determines multiplier value by which weights or the coefficients changes
-            self.df = 0.4  # represents how much future events lose their value according to how far away in time they are
-            self.exr = 0.6  # speed of agent learning at the beginning
-            self.exrd = 0.1  # learning speed decrease factor
+            lr = 20
+            df = 20
+            exr = 20
+            exrd = 20
 
             self.env = gym.wrappers.Monitor(env, self.exp_dir + '/video', force=True, resume=False,
                                             video_callable=self.video_callable)
-            episode_history, end_index = self.run_agent(self, self.lr, self.df, self.exr, self.exrd, self.env,
+
+            episode_history, end_index = self.run_agent(self, lr, df, exr, exrd, self.env,
                                                         verbose=False)
         else:
             # Here all data about env will received from main script, so
@@ -275,14 +336,15 @@ class Controler:
 
             self.env = gym.wrappers.Monitor(env, self.exp_dir + '/video', force=True, resume=False,
                                             video_callable=self.video_callable)
-            episode_history, end_index = self.run_agent(self, self.lr, self.df, self.exr, self.exrd, self.env,
-                                                        verbose=False)
+            episode_history, end_index = self.run_agent(self, self.learning_rate, self.discount_factor,
+                                                        self.exploration_rate, self.exploration_decay_rate,
+                                                        self.env, verbose=False)
 
-    def run_agent(self, rate, factor, exploration, exp_decay, env, verbose=False):  # Main class with main loop
+    def run_agent(self, rate, factor, exploration, exp_decay, env, verbose=False):
         max_episodes_to_run = env.unwrapped.total_episodes
         max_timesteps_per_episode = env.unwrapped.walls_num
 
-        goal_avg_episode_length = env.unwrapped.walls_num - 0.5  # used for fair calculation of finish line cross (details at method "is_goal_reached" of class EpisodeHistory)
+        goal_avg_episode_length = env.unwrapped.walls_num
         wall_coef = 6 / env.unwrapped.walls_num
         goal_consecutive_episodes = int(wall_coef * self.window)  # how many times agent can consecutive run succesful
 
@@ -318,27 +380,27 @@ class Controler:
 
             while True:
                 action = agent.choose_action(observation)
+                # print('action ', action)
                 observation_, reward, done, info = env.step(action)  # Perform the action and observe the new state.
 
                 if verbose == True:
                     env.render()
-                    # self.log_timestep(timestep_index, action, reward, observation)
+                    self.log_timestep(timestep_index, action, reward, observation)
 
-                if done and timestep_index < max_timesteps_per_episode - 1:  # 'timestep_index < max_timesteps_per_episode - 1' - checks if car reach finish, where 'timestep_index' - current stage index and 'max_timesteps_per_episode - 1' amount of stages with walls at all. If 'done' variable is True means that current stage was completed by crossing the finish line or hitting the wall
-                    reward = -max_episodes_to_run  # set crush state reward. Setting of finish and success move states look at tetris_race(243-247), but these rewards are rewritten in the following two conditions.
-                elif done and timestep_index == max_timesteps_per_episode - 1:  # crossing finish line reward
-                    reward = max_episodes_to_run
-                else:  # ordinary step reward
-                    reward = -5
+                if done and timestep_index < max_timesteps_per_episode - 1:
+                    reward = -max_episodes_to_run
 
-                agent.act(observation, action, reward, observation_)
+                QDF = agent.act(observation, action, reward, observation_)
                 observation = observation_
 
                 if done:
+                    self.episode_index += 1
+                    # self.saveQmemoryInFile(agent.q_memory)
                     self.done_manager(self, episode_index, [], [], 'D')
                     if self.done_manager(self, episode_index, [], finish_freq, 'S') and finish_freq[1]:
+                        foo = Classification()
                         finish_freq[1] = False
-
+                    # foo = Regression(QDF)
                     episode_history[episode_index] = timestep_index + 1
                     if verbose or episode_index % plot_redraw_frequency == 0:
                         episode_history.update_plot(episode_index)
@@ -346,6 +408,7 @@ class Controler:
                     if episode_history.is_goal_reached(episode_index):
                         print("Goal reached after {} episodes!".format(episode_index + 1))
                         end_index = episode_index + 1
+                        foo = Regression(QDF)
                         self.done_manager(self, [], plt, [], 'P')
 
                         return episode_history, end_index
@@ -374,7 +437,7 @@ class Controler:
         if mode == 'P':  # work woth progress plot
             path = self.exp_dir + '/learn_curve'
             name = '/W ' + str(self.env.unwrapped.walls_num) + \
-                   '_LR ' + str(self.lr) + '_DF ' + str(self.df)
+                   '_LR ' + str(self.learning_rate) + '_DF ' + str(self.discount_factor)
             if not os.path.exists(path):
                 os.makedirs(path)
             plt.savefig(path + name + '.png')
@@ -384,7 +447,7 @@ class Controler:
                 mx = np.max(arr)
                 ind = np.where(arr == mx)[0]
                 count = ind.shape[0]
-                prc = count / self.window if mx > self.env.unwrapped.walls_per_level * 2 else 0
+                prc = count / self.window if mx > self.env.unwrapped.walls_per_level * 2  else 0
                 x = self.agent_history
                 total_finishes = sum(map(lambda x: x > self.env.unwrapped.walls_per_level * 2, x))
 
@@ -392,15 +455,47 @@ class Controler:
 
     def video_callable(episode_id):
         # call agent draw eact N episodes
-        return episode_id % 1000 == 0
+        return episode_id % 300 == 0
+
+    def log_timestep(self, index, action, reward, observation):
+        # print parameters in console
+        format_string = "   ".join(['Timestep:{}',
+                                    'Action:{}',
+                                    'Reward:{}',
+                                    'Car pos:{}',
+                                    'WallY pos:{}'])
+        print('Timestep: format string ', format_string.format(index, action, reward,
+                                                               observation[0], observation[1]))
+
+    def save_history(self, history, experiment_dir):
+        # Save the episode lengths to CSV.
+        filename = os.path.join(experiment_dir, "episode_history.csv")
+        dataframe = pd.DataFrame(history.lengths, columns=["length"])
+        dataframe.to_csv(filename, header=True, index_label="episode")
+
+
+class Regression:
+    def __init__(self):
+    # =============== TODO: Your code here ===============
+    # One of subtask. Receives dataset, must return prediction vector
+    # print('Hey, sexy mama, wanna kill all humans?')
+        pass
+
+
+class Classification:
+    def __init__(self):
+        # One of subtask. Receives dataset, must return prediction vector
+        print('Kill all humans, kill all humans, must kill all humans...')
+        pass
 
 
 def main(env, parent_mode=True):
-    obj = Controler
+    obj = Controller
     obj.__init__(obj, parent_mode=parent_mode, global_env=env)
 
 
 if __name__ == "__main__":
+
     if 'master.py' not in os.listdir('.'):
         main([], parent_mode=False)
     else:
